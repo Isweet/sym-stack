@@ -1,12 +1,11 @@
 module SymStack where
 
 import Prelude hiding (LT, GT, EQ)
-
 import qualified Data.Set as S
-import qualified Data.Map as M
-import Data.Maybe
+import qualified Data.List as L
+import qualified Data.Maybe as M
 
-import Control.Monad
+import qualified Control.Monad as C
 
 import Z3.Monad hiding (Symbol, Model, check)
 
@@ -68,9 +67,15 @@ type Counter = Int
 type Stack = [Symbol]
 type Condition = Symbol
 
-data State = State { code :: Code, counter :: Counter, stack :: Stack, pc :: Condition } deriving ( Show, Eq, Ord )
+data State = State { code :: Code, counter :: Counter, stack :: Stack, pc :: Condition } deriving ( Eq, Ord )
 
-type Model = M.Map String Integer
+instance Show State where
+    show s = concatMap (\ str -> "  " ++ str ++ "\n") $ L.lines noIndent
+        where
+            noIndent = "-- CODE --\n\n" ++ c ++ "\n\n-- STACK --\n\n" ++ stk ++ "\n\n-- PATH CONDITION --\n\n" ++ pstr
+            c = L.intercalate "\n" $ map (\ (idx, instr) -> (show idx) ++ ": " ++ (show instr) ++ (if (counter s) == idx then " <--" else "")) (zip [0..] (code s))
+            stk = L.intercalate "\n" $ map (\ (idx, sym) -> (show idx) ++ ": " ++ (show sym)) (zip [0..] (stack s))
+            pstr = show . pc $ s
 
 {- Helpers -}
 fresh :: Stack -> Symbol -> Symbol
@@ -204,7 +209,7 @@ jumpI :: State -> IO (S.Set State)
 jumpI s = do
     let x1 : x2 : ss = (stack s)
     let branch = Equal x2 (SymInt 0)
-    candsT <- filterM (\ ele -> (sat $ And (And (pc s) (Equal x1 (SymInt ele))) (Not branch)) >>= return . isJust) [0..(fromIntegral . length . code $ s)]
+    candsT <- C.filterM (\ ele -> (sat $ And (And (pc s) (Equal x1 (SymInt ele))) (Not branch)) >>= return . M.isJust) [0..(fromIntegral . length . code $ s)]
     let candsT' = map (\ ele -> s { counter = (fromIntegral ele), stack = ss, pc = And (And (pc s) (Equal x1 (SymInt . fromIntegral $ ele))) (Not branch) }) candsT
     return $ S.union (S.fromList candsT') (S.singleton $ s { counter = (counter s) + 1, stack = ss, pc = And (pc s) branch })
 
@@ -213,12 +218,8 @@ check s cond = do
     check <- sat (And (pc s) cond)
     case check of
         Just m -> do
-            putStrLn "--- ERROR STATE ---\n"
-            print s
-            putStrLn ""
-            print cond
-            putStrLn ""
-            putStrLn m
+            let str = "* ERROR\n" ++ (show s) ++ "\n  * PROBLEM\n" ++ "    ϕ ⊢ " ++ (show cond) ++ " with...\n\n" ++ (concatMap (\ ele -> "    " ++ ele ++ "\n") $ L.lines m)
+            putStrLn (concatMap (\ ele -> "  " ++ ele ++ "\n") $ L.lines str)
             return True
         Nothing ->
             return False
@@ -274,7 +275,7 @@ step s = case (code s) !! (counter s) of
             s' = map (\ (i, x) -> if i == 0 then stk !! idx else if i == idx then stk !! 0 else x) (zip [0..] stk)
     JUMP -> do
         let x1 : ss = (stack s)
-        cands <- filterM (\ ele -> (sat $ And (pc s) (Equal x1 (SymInt ele))) >>= return . isJust) [0..(fromIntegral . length . code $ s)]
+        cands <- C.filterM (\ ele -> (sat $ And (pc s) (Equal x1 (SymInt ele))) >>= return . M.isJust) [0..(fromIntegral . length . code $ s)]
         return . S.fromList $ map (\ ele -> s { counter = (fromIntegral ele), stack = ss, pc = And (pc s) (Equal x1 (SymInt . fromIntegral $ ele)) }) cands
     JUMPI -> jumpI s
     READ -> return . S.singleton $ s { counter = (counter s) + 1, stack = (fresh (stack s) (pc s)) : (stack s) }
