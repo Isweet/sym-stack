@@ -4,14 +4,37 @@ import Prelude hiding (LT, GT, EQ)
 
 import SymStack
 
-exCode :: Code
-exCode =    [ PUSH 0
+{-
+ - int x = read()
+ - int y = read()
+ - int z = read()
+ - if (z == 73) then
+ -     return y / x;
+ - else
+ -     return y * x;
+ -}
+
+simpleIf :: Code
+simpleIf =  [ READ
             , READ
-            , PUSH 5
-            , LT
+            , READ
+            , PUSH 73
+            , EQ
+            , PUSH 10
+            , JUMPI
+            , MUL
+            , PUSH 11
+            , JUMP
             , DIV
             , STOP
             ]
 
+defaultState :: State
+defaultState = State { code = [], counter = 0, stack = [], pc = SymBool True }
+
+testRunner :: [(String, Code)] -> IO ()
+testRunner = mapM_ (\ (name, test) -> putStrLn (name ++ ":\n") >>= (\ _ -> eval $ defaultState { code = test }))
+
 main :: IO ()
-main = eval State { code = exCode, counter = 0, stack = [], pc = SymBool True }
+main = testRunner [("simpleIf", simpleIf)]
+

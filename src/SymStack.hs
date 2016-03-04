@@ -4,6 +4,9 @@ import Prelude hiding (LT, GT, EQ)
 
 import qualified Data.Set as S
 import qualified Data.Map as M
+import Data.Maybe
+
+import Control.Monad
 
 import Z3.Monad hiding (Symbol, Model, check)
 
@@ -197,6 +200,14 @@ boolUn s f = do
             sTrue = s' { pc = And pc't (Equal x' (SymInt 1)) }
             sFalse = s' { pc = And pc'f (Equal x' (SymInt 0)) }
 
+jumpI :: State -> IO (S.Set State)
+jumpI s = do
+    let x1 : x2 : ss = (stack s)
+    let branch = Equal x2 (SymInt 0)
+    candsT <- filterM (\ ele -> (sat $ And (And (pc s) (Equal x1 (SymInt ele))) (Not branch)) >>= return . isJust) [0..(fromIntegral . length . code $ s)]
+    let candsT' = map (\ ele -> s { counter = (fromIntegral ele), stack = ss, pc = And (And (pc s) (Equal x1 (SymInt . fromIntegral $ ele))) (Not branch) }) candsT
+    return $ S.union (S.fromList candsT') (S.singleton $ s { counter = (counter s) + 1, stack = ss, pc = And (pc s) branch })
+
 check :: State -> Symbol -> IO Bool
 check s cond = do
     check <- sat (And (pc s) cond)
@@ -261,4 +272,9 @@ step s = case (code s) !! (counter s) of
         where
             stk = (stack s)
             s' = map (\ (i, x) -> if i == 0 then stk !! idx else if i == idx then stk !! 0 else x) (zip [0..] stk)
+    JUMP -> do
+        let x1 : ss = (stack s)
+        cands <- filterM (\ ele -> (sat $ And (pc s) (Equal x1 (SymInt ele))) >>= return . isJust) [0..(fromIntegral . length . code $ s)]
+        return . S.fromList $ map (\ ele -> s { counter = (fromIntegral ele), stack = ss, pc = And (pc s) (Equal x1 (SymInt . fromIntegral $ ele)) }) cands
+    JUMPI -> jumpI s
     READ -> return . S.singleton $ s { counter = (counter s) + 1, stack = (fresh (stack s) (pc s)) : (stack s) }
