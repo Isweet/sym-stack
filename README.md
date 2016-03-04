@@ -10,4 +10,4 @@ A simple symbolic stack machine. Proof of concept. Identifies divide by zero err
 
 ## Try it Out
 
-    ./try
+    ./try.sh
