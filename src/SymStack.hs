@@ -149,13 +149,8 @@ sat pc = evalZ3 $ do
     pcZ3 <- symToZ3 pc
     assert pcZ3
     m <- getModel >>= return . snd
-    case m of
-        Just m' -> do
-            mStr <- showModel m'
-            return $ Just mStr
-        Nothing -> 
-            return Nothing
-
+    traverse showModel m
+    
 arith :: State -> (Symbol -> Symbol -> Symbol) -> S.Set State
 arith s f = S.singleton $ s { counter = c', stack = s', pc = pc' }
     where
