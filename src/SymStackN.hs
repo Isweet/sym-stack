@@ -10,6 +10,8 @@ import Control.Monad.State.Lazy
 import Symbol
 import Instr
 
+-- TODO: add symbolic checks (e.g. for div0)
+
 {- Types -}
 
 type Code = [Instr]
@@ -30,6 +32,7 @@ eval :: Ctl -> Int -> SymStack Ctl
 eval ctl 0 = return ctl
 eval ctl n = do
   ctl' <- step ctl
+  -- TODO: filter out infeasible states
   eval ctl' (n - 1)
 
 runSymStack :: Ctl -> Int -> [String]
@@ -59,7 +62,8 @@ incr :: Ctl -> SymStack a -> SymStack Ctl
 incr ctl eff = do
   eff
   return (tick ctl)
-
+  
+-- TODO, this really isn't how fresh should work (should have separate counters for params and intermediates)
 fresh :: String -> SymStack Symbol
 fresh prefix = do
   st <- get
@@ -158,15 +162,19 @@ pop = do
   put (st { stack = stack' })
   return ret
 
+-- TODO
 dupn :: Int -> SymStack ()
 dupn idx = mzero
 
+-- TODO
 swapn :: Int -> SymStack ()
 swapn idx = mzero
 
+-- TODO
 jump :: SymStack Ctl
 jump = mzero
 
+-- TODO
 jumpi :: SymStack Ctl
 jumpi = mzero
 
