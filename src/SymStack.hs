@@ -62,7 +62,7 @@ instance Show Symbol where
     show (Or s1 s2) = "(" ++ (show s1) ++ " || " ++ (show s2) ++ ")"
     show (Not s) = "~" ++ (show s)
 
-type Code = [Instr]
+type Code = [Instr] -- should really be an array (random access)
 type Counter = Int
 type Stack = [Symbol]
 type Condition = Symbol
@@ -150,7 +150,7 @@ sat pc = evalZ3 $ do
     assert pcZ3
     m <- getModel >>= return . snd
     traverse showModel m
-    
+   
 arith :: State -> (Symbol -> Symbol -> Symbol) -> S.Set State
 arith s f = S.singleton $ s { counter = c', stack = s', pc = pc' }
     where
@@ -228,6 +228,90 @@ eval s = eval' $ S.singleton s
             else do
                 res <- S.unions <$> mapM step (S.toList ss)
                 eval' res
+
+-- Need writer for logging error states
+-- Need state for... state
+-- Need non-det because step is a relation (x -> x1 and x -> x2 does NOT imply x1 = x2)
+
+type SymStack a = [a]
+data Control = Control { codeC :: Code, counterC :: Counter } deriving ( Eq, Ord )
+
+tick :: Control -> Control
+tick c = c { counterC = (counterC c) + 1 }
+
+sChangeArgsBin :: (Symbol -> Symbol) -> (Symbol -> Symbol) -> (Symbol -> Symbol -> Symbol) -> Symbol -> Symbol -> Symbol
+sChangeArgsBin carg1 carg2 f a b = f (carg1 a) (carg2 b)
+
+sIntToBool :: Symbol -> Symbol
+sIntToBool i = Not (Equal i (SymInt 0))
+
+sIntToBoolBin :: (Symbol -> Symbol -> Symbol) -> Symbol -> Symbol -> Symbol
+sIntToBoolBin f = sChangeArgsBin sIntToBool sIntToBool f
+
+arith_new :: (Symbol -> Symbol -> Symbol) -> SymStack ()
+arith_new f = C.mzero
+
+boolBin_new :: (Symbol -> Symbol -> Symbol) -> SymStack ()
+boolBin_new f = C.mzero
+
+boolUn_new :: (Symbol -> Symbol) -> SymStack Control
+boolUn_new f = C.mzero
+
+step_new :: Control -> SymStack Control
+step_new curr = case (codeC curr) !! (counterC curr) of
+  STOP      -> C.mzero
+  ADD       -> do
+    arith_new Add
+    return (tick curr)
+  SUB       -> do
+    arith_new Sub
+    return (tick curr)
+  MUL       -> do
+    arith_new Mul
+    return (tick curr)
+  DIV       -> do
+    arith_new Div
+    return (tick curr)
+  MOD       -> do
+    arith_new Mod
+    return (tick curr)
+  LT        -> do
+    boolBin_new Less
+    return (tick curr)
+  GT        -> do
+    boolBin_new Greater
+    return (tick curr)
+  EQ        -> do
+    boolBin_new Equal
+    return (tick curr)
+  ISZERO    -> do
+    boolUn_new (\s -> Equal s (SymInt 0))
+    return (tick curr)
+  AND       -> do
+    boolBin_new (sIntToBoolBin And)
+    return (tick curr)
+  OR        -> do
+    boolBin_new (sIntToBoolBin Or)
+    return (tick curr)
+  PUSH n    -> do
+    push n
+    return (tick curr)
+  POP       -> do
+    pop
+    return (tick curr)
+  DUPN idx  -> do
+    dupn idx
+    return (tick curr)
+  SWAPN idx -> do
+    swapn idx
+    return (tick curr)
+  JUMP      -> do
+    jump
+  JUMPI     -> do
+    jumpi
+  READ      -> do
+    read
+    return (tick curr)
 
 step :: State -> IO (S.Set State)
 step s = case (code s) !! (counter s) of
