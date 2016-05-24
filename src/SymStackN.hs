@@ -4,8 +4,9 @@ import Prelude hiding (LT, GT, EQ, div, mod, and, or, read, log)
 import Control.Monad
 import Data.Maybe
 
+import Data.Array
 import Control.Monad.Writer.Lazy
-import Pipes hiding (next)
+import Pipes
 import Control.Monad.State.Lazy
 
 import Symbol
@@ -13,50 +14,77 @@ import Instr
 
 -- TODO: add symbolic checks (e.g. for div0)
 
-{- Types -}
+{-
+    Types
+    =====
+-}
 
-type Code = [Instr]
+{- Control -}
+type Counter = Integer
+type Code = Array Counter Instr
+
+data Ctl = Ctl { counter :: Counter, code :: Code } deriving ( Show, Eq, Ord )
+
+defaultCtl :: Ctl
+defaultCtl = Ctl { counter = 1, code = array (0, -1) [] }
+
+{- Environment -}
 type Stack = [Symbol]
-data Cond = Cond { next :: Integer, pc :: Symbol } deriving ( Show, Eq, Ord )
+type Cond = Symbol
 
 data St = St { stack :: Stack, cond :: Cond } deriving ( Show, Eq, Ord )
 
-type SymStack a = StateT St (ListT (Writer [String])) a
-
-data Ctl = Ctl { code :: Code, counter :: Int } deriving ( Show, Eq, Ord )
-
-{- Runner -}
-
 defaultSt :: St
-defaultSt = St { stack = [], cond = Cond { next = 0, pc = SymBool True } }
+defaultSt = St { stack = [], cond = SymBool True }
 
-stSat :: SymStack Bool
-stSat = do
+{- Effect Interface -}
+data Supply = Supply { param :: Integer, interm :: Integer }
+
+defaultSupply :: Supply
+defaultSupply = Supply { param = 0, interm = 0 }
+
+type SymStack a = StateT St (StateT Supply (ListT (Writer [String]))) a
+
+{-
+    Runner
+    ======
+-}
+
+prune :: Ctl -> (Ctl -> St -> Bool) -> SymStack ()
+prune ctl check = do
   st <- get
-  let prev = (pc . cond) st
-  return (isJust (sat prev))
+  let prev = cond st
+  if (check ctl st) then
+    return ()
+  else
+    mzero
 
 -- TODO: filter out error states && report
 eval :: Ctl -> Int -> SymStack Ctl
 eval ctl 0 = return ctl
 eval ctl n = do
   ctl' <- step ctl
-  isSat <- stSat
-  if isSat then
-    return ctl'
-  else
-    mzero
+  prune ctl' (\_ st -> isJust . sat . cond $ st )
   eval ctl' (n - 1)
 
-runSymStack :: Ctl -> Int -> [String]
-runSymStack init depth = (execWriter . runListT . evalStateT (eval init depth)) defaultSt
+runSymStack' :: Ctl -> Int -> [String]
+runSymStack' init depth = execWriter . runListT $ evalStateT (evalStateT (eval init depth) defaultSt) defaultSupply
 
-{- Generic Helpers -}
+runSymStack :: [Instr] -> Int -> [String]
+runSymStack c depth = runSymStack' (defaultCtl { code = listArray (1, fromIntegral (length c)) c }) depth
+
+{-
+    Generic Helpers
+    ===============
+-}
 
 alterArgsBin :: (a -> a) -> (a -> a) -> (a -> a -> a) -> a -> a -> a
 alterArgsBin change1 change2 f a b = f (change1 a) (change2 b)
 
-{- SymStack Helpers -}
+{-
+    SymStack Helpers
+    ================
+-}
 
 -- Increment program counter
 tick :: Ctl -> Ctl
@@ -75,23 +103,31 @@ incr :: Ctl -> SymStack a -> SymStack Ctl
 incr ctl eff = do
   eff
   return (tick ctl)
-  
--- TODO, this really isn't how fresh should work (should have separate counters for params and intermediates)
-fresh :: String -> SymStack Symbol
-fresh prefix = do
-  st <- get
-  let prevCond = cond st
-  let prev = next prevCond
-  put (st { cond = (cond st) { next = prev + 1 } })
-  return (Atom (prefix ++ (show prev)))
 
+-- Get a fresh parameter
+freshParam :: SymStack Symbol
+freshParam = do
+  sup <- (lift get)
+  let prev = param sup
+  (lift . put) (sup { param = prev + 1 })
+  return (Atom ("p" ++ (show prev)))
+
+-- Get a fresh temporary var
+freshInterm :: SymStack Symbol
+freshInterm = do
+  sup <- (lift get)
+  let prev = interm sup
+  (lift . put) (sup { interm = prev + 1 })
+  return (Atom ("x" ++ (show prev)))
+
+-- Add to path condition
 addPC :: Symbol -> SymStack ()
 addPC sym = do
   st <- get
-  let prevCond = cond st
-  let prev = pc prevCond
-  put (st { cond = (cond st) { pc = And (prev) sym } })
+  let prev = cond st
+  put (st { cond = And prev sym })
 
+-- Log the universe
 log :: Ctl -> SymStack Ctl
 log ctl = do
   st <- get
@@ -103,7 +139,7 @@ arith :: (Symbol -> Symbol -> Symbol) -> SymStack ()
 arith f = do
   x1 <- pop
   x2 <- pop
-  x' <- fresh "x"
+  x' <- freshInterm
   addPC (Equal x' (f x1 x2))
   push x'
 
@@ -112,7 +148,7 @@ boolBin :: (Symbol -> Symbol -> Symbol) -> SymStack ()
 boolBin f = do
   x1 <- pop
   x2 <- pop
-  x' <- fresh "x"
+  x' <- freshInterm
   addPC (Equal x' (Ite (f x1 x2) (SymInt 1) (SymInt 0)))
   push x'
 
@@ -120,11 +156,14 @@ boolBin f = do
 boolUn :: (Symbol -> Symbol) -> SymStack ()
 boolUn f = do
   x <- pop
-  x' <- fresh "x"
+  x' <- freshInterm
   addPC (Equal x' (Ite (f x) (SymInt 1) (SymInt 0)))
   push x'
 
-{- Instruction effects -}
+{-
+    Instruction effects
+    ===================
+-}
 
 stop :: SymStack Ctl
 stop = mzero
@@ -192,7 +231,7 @@ swapn idx = do
 lowerBound :: Ctl -> SymStack Ctl
 lowerBound ctl = do
   x <- pop
-  addPC (Less x (SymInt 0))
+  addPC (Less x (SymInt 1))
   return (ctl { counter = -1 })
 
 inside :: Ctl -> SymStack Ctl
@@ -201,30 +240,28 @@ inside ctl = msum $
           x <- pop
           addPC (Equal x (SymInt idx))
           return (ctl { counter = fromIntegral idx }))
-  [0..(fromIntegral . length . code $ ctl)]
+  [1..(fromIntegral . length . code $ ctl)]
 
 upperBound :: Ctl -> SymStack Ctl
 upperBound ctl = do
   x <- pop
   let lim = fromIntegral .  length . code $ ctl
-  addPC (Not (Less x (SymInt lim)))
+  addPC (Greater x (SymInt lim))
   return (ctl { counter = -1 })
 
 jump :: Ctl -> SymStack Ctl
-jump ctl = do
-  lowerBound ctl `mplus` inside ctl `mplus` upperBound ctl
+jump ctl = lowerBound ctl `mplus` inside ctl `mplus` upperBound ctl
 
--- TODO
 jumpi :: SymStack Ctl
 jumpi = mzero
 
 read :: SymStack ()
 read = do
-  x' <- fresh "p"
+  x' <- freshParam
   push x'
   
 step :: Ctl -> SymStack Ctl
-step ctl = case (code ctl) !! (counter ctl) of
+step ctl = case (code ctl) ! (counter ctl) of
   STOP      -> do
     log ctl
     stop

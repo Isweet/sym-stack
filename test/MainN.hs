@@ -16,27 +16,27 @@ import SymStackN
  -}
 
 
-simple :: Code
+simple :: [Instr]
 simple   =  [ READ
             , READ
             , DIV
             , STOP
             ]
 
-simpleJmp :: Code
+simpleJmp :: [Instr]
 simpleJmp = [ PUSH 3
             , PUSH 5
             , PUSH 2
             , READ
             , MOD
-            , PUSH 8
+            , PUSH 9
             , ADD
             , JUMP
             , ADD
             , STOP
             ]
 
-simpleIf :: Code
+simpleIf :: [Instr]
 simpleIf =  [ READ
             , READ
             , READ
@@ -51,7 +51,7 @@ simpleIf =  [ READ
             , STOP
             ]
 
-brokenIf :: Code
+brokenIf :: [Instr]
 brokenIf =  [ READ
             , READ
             , READ
@@ -66,8 +66,8 @@ brokenIf =  [ READ
             , STOP
             ]
 
-defaultControl :: Ctl
-defaultControl = Ctl { code = [], counter = 0 }
+runExample :: [Instr] -> IO ()
+runExample c = mapM_ putStrLn $ runSymStack c 1000
 
 main :: IO ()
-main = mapM_ putStrLn $ runSymStack (defaultControl { code = simpleJmp }) 1000
+main = runExample simpleJmp
