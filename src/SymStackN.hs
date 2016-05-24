@@ -36,6 +36,7 @@ stSat = do
   let prev = (pc . cond) st
   return (isJust (sat prev))
 
+-- TODO: filter out error states && report
 eval :: Ctl -> Int -> SymStack Ctl
 eval ctl 0 = return ctl
 eval ctl n = do
@@ -174,17 +175,44 @@ pop = do
   put (st { stack = stack' })
   return ret
 
--- TODO
 dupn :: Int -> SymStack ()
-dupn idx = mzero
+dupn idx = do
+  st <- get
+  let prev = (stack st)
+  let stack' = (prev !! (idx - 1)) : prev
+  put (st { stack = stack' })
 
--- TODO
 swapn :: Int -> SymStack ()
-swapn idx = mzero
+swapn idx = do
+  st <- get
+  let prev = (stack st)
+  let stack' = map (\(i, sym) -> if i == 0 then prev !! idx else if i == idx then prev !! 0 else sym) (zip [0..] prev)
+  put (st { stack = stack' })
 
--- TODO
-jump :: SymStack Ctl
-jump = mzero
+lowerBound :: Ctl -> SymStack Ctl
+lowerBound ctl = do
+  x <- pop
+  addPC (Less x (SymInt 0))
+  return (ctl { counter = -1 })
+
+inside :: Ctl -> SymStack Ctl
+inside ctl = msum $
+  map (\ idx -> do
+          x <- pop
+          addPC (Equal x (SymInt idx))
+          return (ctl { counter = fromIntegral idx }))
+  [0..(fromIntegral . length . code $ ctl)]
+
+upperBound :: Ctl -> SymStack Ctl
+upperBound ctl = do
+  x <- pop
+  let lim = fromIntegral .  length . code $ ctl
+  addPC (Not (Less x (SymInt lim)))
+  return (ctl { counter = -1 })
+
+jump :: Ctl -> SymStack Ctl
+jump ctl = do
+  lowerBound ctl `mplus` inside ctl `mplus` upperBound ctl
 
 -- TODO
 jumpi :: SymStack Ctl
@@ -215,6 +243,6 @@ step ctl = case (code ctl) !! (counter ctl) of
   POP       -> incr ctl pop
   DUPN idx  -> incr ctl (dupn idx)
   SWAPN idx -> incr ctl (swapn idx)
-  JUMP      -> jump
+  JUMP      -> jump ctl
   JUMPI     -> jumpi
   READ      -> incr ctl read

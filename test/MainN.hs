@@ -23,6 +23,19 @@ simple   =  [ READ
             , STOP
             ]
 
+simpleJmp :: Code
+simpleJmp = [ PUSH 3
+            , PUSH 5
+            , PUSH 2
+            , READ
+            , MOD
+            , PUSH 8
+            , ADD
+            , JUMP
+            , ADD
+            , STOP
+            ]
+
 simpleIf :: Code
 simpleIf =  [ READ
             , READ
@@ -57,4 +70,4 @@ defaultControl :: Ctl
 defaultControl = Ctl { code = [], counter = 0 }
 
 main :: IO ()
-main = mapM_ putStrLn $ runSymStack (defaultControl { code = simple }) 1000
+main = mapM_ putStrLn $ runSymStack (defaultControl { code = simpleJmp }) 1000
