@@ -2,6 +2,7 @@ module SymStackN where
 
 import Prelude hiding (LT, GT, EQ, div, mod, and, or, read, log)
 import Control.Monad
+import Data.Maybe
 
 import Control.Monad.Writer.Lazy
 import Pipes hiding (next)
@@ -25,14 +26,25 @@ type SymStack a = StateT St (ListT (Writer [String])) a
 data Ctl = Ctl { code :: Code, counter :: Int } deriving ( Show, Eq, Ord )
 
 {- Runner -}
+
 defaultSt :: St
 defaultSt = St { stack = [], cond = Cond { next = 0, pc = SymBool True } }
+
+stSat :: SymStack Bool
+stSat = do
+  st <- get
+  let prev = (pc . cond) st
+  return (isJust (sat prev))
 
 eval :: Ctl -> Int -> SymStack Ctl
 eval ctl 0 = return ctl
 eval ctl n = do
   ctl' <- step ctl
-  -- TODO: filter out infeasible states
+  isSat <- stSat
+  if isSat then
+    return ctl'
+  else
+    mzero
   eval ctl' (n - 1)
 
 runSymStack :: Ctl -> Int -> [String]
