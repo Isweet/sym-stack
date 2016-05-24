@@ -252,8 +252,19 @@ upperBound ctl = do
 jump :: Ctl -> SymStack Ctl
 jump ctl = lowerBound ctl `mplus` inside ctl `mplus` upperBound ctl
 
-jumpi :: SymStack Ctl
-jumpi = mzero
+modifyI :: Ctl -> (Ctl -> SymStack Ctl) -> SymStack Ctl
+modifyI ctl eff = do
+  ctl' <- eff ctl
+  x <- pop
+  addPC (Not (Equal x (SymInt 0)))
+  return ctl'
+
+jumpi :: Ctl -> SymStack Ctl
+jumpi ctl =
+  (modifyI ctl lowerBound) `mplus`
+  (modifyI ctl inside) `mplus`
+  (modifyI ctl upperBound) `mplus`
+  (incr ctl (pop >> pop >>= \sym -> addPC (Equal sym (SymInt 0))))
 
 read :: SymStack ()
 read = do
@@ -281,5 +292,5 @@ step ctl = case (code ctl) ! (counter ctl) of
   DUPN idx  -> incr ctl (dupn idx)
   SWAPN idx -> incr ctl (swapn idx)
   JUMP      -> jump ctl
-  JUMPI     -> jumpi
+  JUMPI     -> jumpi ctl
   READ      -> incr ctl read

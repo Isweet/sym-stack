@@ -37,15 +37,15 @@ simpleJmp = [ PUSH 3
             ]
 
 simpleIf :: [Instr]
-simpleIf =  [ READ
-            , READ
+simpleIf =  [ PUSH 2
+            , PUSH 4
             , READ
             , PUSH 73
             , EQ
-            , PUSH 10
+            , PUSH 11
             , JUMPI
             , MUL
-            , PUSH 11
+            , PUSH 12
             , JUMP
             , DIV
             , STOP
@@ -70,4 +70,4 @@ runExample :: [Instr] -> IO ()
 runExample c = mapM_ putStrLn $ runSymStack c 1000
 
 main :: IO ()
-main = runExample simpleJmp
+main = runExample simpleIf
